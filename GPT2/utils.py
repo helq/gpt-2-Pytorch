@@ -9,14 +9,19 @@ import logging
 
 import torch.nn as nn
 from .model import GPT2LMHeadModel, GPT2Model
-from typing import Any, Dict, Union, List
+from typing import Any, Dict, Union, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def interact(locals: Any) -> None:
+def interact(locals: Dict[str, Any], globals: Optional[Any] = None) -> None:
     import code
-    code.InteractiveConsole(locals=locals).interact()
+    if globals is None:
+        code.InteractiveConsole(locals=locals).interact()
+    else:
+        dic = globals.copy()
+        dic.update(locals)
+        code.InteractiveConsole(locals=dic).interact()
 
 
 def load_weight(  # noqa: C901

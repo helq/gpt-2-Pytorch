@@ -14,24 +14,36 @@ import numpy as np
 from GPT2.model import GPT2LMHeadModel
 import GPT2.utils as utils
 from GPT2.config import GPT2Config
-from GPT2.sample import sample_sequence
+from GPT2.sample import sample_sequence, predict_next
 from GPT2.encoder import get_encoder
 
-from typing import Any, Dict, Optional, Generator
+# from GPT2.utils import interact
+
+from typing import Any, Dict, Optional, Generator, List
 
 
 def get_args() -> Any:
     parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--text", type=str, default=None)
-    group.add_argument('--unconditional',
-                       action='store_true', help='If true, unconditional generation.')
-    parser.add_argument("--quiet", action='store_true')
-    parser.add_argument("--nsamples", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=None)
+
+    group = parser.add_argument_group("Sequence generation")
+    groupexc = group.add_mutually_exclusive_group(required=True)
+    groupexc.add_argument("--text", type=str, default=None)
+    groupexc.add_argument('--unconditional',
+                          action='store_true', help='If true, unconditional generation.')
+    group.add_argument("--nsamples", type=int, default=1)
+    group.add_argument("--batch_size", type=int, default=None)
+
+    group2 = parser.add_argument_group("Next word")
+    group2.add_argument("--next_word", action='store_true',
+                        help='Activates next word only. It only shows the next most probable words')
+
     parser.add_argument("--length", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=0.7)
-    parser.add_argument("--top_k", type=int, default=40)
+    parser.add_argument(
+        "--top_k", type=int, default=40,
+        help='How many "words" to consider when sampling. 0 means consider everything')
+
+    parser.add_argument("--quiet", action='store_true')
     args = parser.parse_args()
 
     if args.quiet is False:
@@ -41,7 +53,9 @@ def get_args() -> Any:
 
 
 class TextGenerator:
-    def __init__(self, state_dict: Dict[str, Any]) -> None:
+    def __init__(self, state_dict: Dict[str, Any],
+                 seed: Optional[int] = None,
+                 ) -> None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # type: ignore
 
         # Load Model
@@ -56,6 +70,8 @@ class TextGenerator:
         self.model = model
         self.config = config
         self.enc = enc
+
+        self.start_seed(seed)
 
     def start_seed(self, seed: Optional[int]) -> None:
         if seed is None:
@@ -73,15 +89,12 @@ class TextGenerator:
         length: Optional[int] = None,
         temperature: float = 0.7,
         top_k: int = 40,
-        seed: Optional[int] = None,
         quiet: bool = True,
     ) -> Generator[str, None, None]:
         assert (text is None and unconditional) or (text is not None and not unconditional)
         if batch_size is None:
             batch_size = 1
         assert nsamples % batch_size == 0
-
-        self.start_seed(seed)
 
         if length is not None and length > self.config.n_ctx:
             raise ValueError(f"Can't get samples longer than window size: {self.config.n_ctx}")
@@ -108,22 +121,46 @@ class TextGenerator:
             for i in range(batch_size):
                 yield self.enc.decode(new_seq[i])
 
+    def generate_next_options(
+        self,
+        text: str,
+        temperature: float = 1,
+        top_k: int = 0,
+        length: Optional[int] = None
+    ) -> List[str]:
+        context_tokens = self.enc.encode(text)
+        out = predict_next(
+            self.model, context=context_tokens, temperature=temperature,
+            top_k=top_k,
+            length=1 if length is None else length,
+            device=self.device
+        )
+        return [self.enc.decode(opt) for opt in out.tolist()]
+
 
 if __name__ == '__main__':
     if not os.path.exists('gpt2-pytorch_model.bin'):
         print('Please download gpt2-pytorch_model.bin')
         sys.exit()
 
-    state_dict = torch.load('gpt2-pytorch_model.bin',  # type: ignore
-                            map_location='cpu' if not torch.cuda.is_available() else None)
     args = get_args()
 
-    print(args.text)
+    state_dict = torch.load('gpt2-pytorch_model.bin',  # type: ignore
+                            map_location='cpu' if not torch.cuda.is_available() else None)
+
     tg = TextGenerator(state_dict)
-    for i, text in enumerate(tg.generate(
-        text=args.text, quiet=args.quiet, nsamples=args.nsamples,
-        unconditional=args.unconditional, batch_size=args.batch_size, length=args.length,
-            temperature=args.temperature, top_k=args.top_k)):
-        if args.quiet is False:
-            print("="*40 + f" SAMPLE {i+1} " + "="*40)
-        print(text)
+
+    if args.next_word:
+        for word in tg.generate_next_options(
+            args.text, args.temperature, args.top_k, length=args.length
+        ):
+            print(repr(word))
+    else:
+        print(args.text)
+        for i, text in enumerate(tg.generate(
+            text=args.text, quiet=args.quiet, nsamples=args.nsamples,
+            unconditional=args.unconditional, batch_size=args.batch_size, length=args.length,
+                temperature=args.temperature, top_k=args.top_k)):
+            if args.quiet is False:
+                print("="*40 + f" SAMPLE {i+1} " + "="*40)
+            print(text)

@@ -74,3 +74,39 @@ def sample_sequence(
                 _, prev = torch.topk(log_probs, k=1, dim=-1)  # type: ignore
             output = torch.cat((output, prev), dim=1)  # type: ignore
     return output  # type: ignore
+
+
+def predict_next(
+    model: GPT2LMHeadModel,
+    context: Any = None,
+    temperature: float = 1,
+    top_k: int = 0,
+    length: int = 1,
+    device: str = 'cuda'
+) -> torch.Tensor:
+    context = torch.tensor(context, device=device, dtype=torch.long  # type: ignore
+                           ).unsqueeze(0).repeat(1, 1)
+
+    if context.shape[1] + length >= 1024:
+        raise ValueError("The size of the input text exceeds the capacity of the network.\n"
+                         "GPT-2 is a CNN in nature. It doesn't have an internal state.\n"
+                         "It takes an input of size < 1024 and predicts the next value.")
+
+    with torch.no_grad():
+        logits, _ = model(context, past=None)
+        logits = logits[:, -1, :] / temperature
+        _, topwords = torch.topk(logits, top_k)  # type: ignore
+
+        topwords = topwords.reshape((-1, 1))
+        prev = torch.cat((context.repeat(top_k, 1), topwords), dim=1)  # type: ignore
+        past = None
+
+        for i in range(length-1):
+            logits, past = model(prev, past=past)
+            logits = logits[:, -1, :] / temperature
+            logits = top_k_logits(logits, k=top_k)
+            log_probs = F.softmax(logits, dim=-1)
+            prev = torch.multinomial(log_probs, num_samples=1)  # type: ignore
+            topwords = torch.cat((topwords, prev), dim=1)  # type: ignore
+
+    return topwords  # type: ignore
