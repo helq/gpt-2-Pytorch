@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import regex as re
+import os
 from functools import lru_cache
 
 from typing import Dict, Set, Tuple, List, Iterable
@@ -119,9 +120,11 @@ class Encoder:
 
 
 def get_encoder() -> Encoder:
-    with open('./GPT2/encoder.json', 'r') as f:
+    curr_dir, _ = os.path.split(__file__)
+
+    with open(os.path.join(curr_dir, 'encoder.json'), 'r') as f:
         encoder = json.load(f)
-    with open('./GPT2/vocab.bpe', 'r', encoding="utf-8") as f:
+    with open(os.path.join(curr_dir, 'vocab.bpe'), 'r', encoding="utf-8") as f:
         bpe_data = f.read()
     bpe_merges = [tuple(merge_str.split()) for merge_str in bpe_data.split('\n')[1:-1]]
     return Encoder(

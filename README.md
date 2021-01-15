@@ -40,7 +40,7 @@ $ python main.py --text "It was a bright cold day in April, and the clocks were 
 - Check 20 different completions for the sentence "I know what you did last Friday,"
 
 ~~~shell
-$ python main.py --text "I know what you did last Friday," --next_word --top_k 20 --length 3
+$ python main.py --text "I know what you did last Friday," --next_word --top_k 20 --length 3 --temperature 2
 ~~~
 
 3. Also You can Quick Starting in [Google Colab](https://colab.research.google.com/github/graykode/gpt-2-Pytorch/blob/master/GPT2_Pytorch.ipynb)
